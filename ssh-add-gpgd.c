@@ -1,11 +1,11 @@
 // Copyright 2017 - Corentin Ferry
-// 
+//
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
 // You may obtain a copy of the License at
-// 
+//
 //     http://www.apache.org/licenses/LICENSE-2.0
-// 
+//
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -27,7 +27,7 @@
 int main(int argc, char* argv[])
 {
     init_gpg();
-    
+
     // iterate through the arguments
     int i;
     char* bind_addr = NULL;
@@ -65,19 +65,26 @@ int main(int argc, char* argv[])
             break;
         }
     }
-    
+
     if(bind_addr == NULL || bind_port == 0 || gpg_key_id == NULL || auth_keys_file == NULL) {
         printf("Usage: %s (--ip4 | --ip6 | --ip-auto) --addr [bind_addr] --port [bind_port] --gpg-key [key_id] auth_keys_file\n", argv[0]);
         return -1;
     }
-    
+
+    if(ipm == IP_6)
+    {
+        fprintf(stderr, "IPv6 is not supported for the moment\n");
+        return -1;
+    }
+
     // Weak protection
     FILE* fd = fopen(auth_keys_file, "a");
     if(!fd)
         diep("fopen");
-    
+
     struct sockaddr_in si_me, si_other;
-    int s, slen=sizeof(si_other);
+    int s;
+    unsigned int slen=sizeof(si_other);
     char buf[DGRAM_SIZE];
     char* keybuf = (char*)malloc(SRV_BUF_SIZE * sizeof(char));
     char* curpointer = keybuf;
@@ -88,14 +95,14 @@ int main(int argc, char* argv[])
 
     char* gpg_key_fp = publicKeyId(gpg_key_id);
     printf("GPG fingerprint to check against is %s\n", gpg_key_fp);
-    
+
     memset((char *) &si_me, 0, sizeof(si_me));
     si_me.sin_family = AF_INET;
     si_me.sin_port = htons(bind_port);
 
     if(inet_aton(bind_addr, &si_me.sin_addr) != 1)
         diep("inet_aton");
-    
+
     if (bind(s, (struct sockaddr *) &si_me, sizeof(si_me))==-1)
         diep("bind");
 
@@ -117,7 +124,7 @@ int main(int argc, char* argv[])
                 curpointer = keybuf;
                 continue;
             }
-            
+
             if(size == 0) {
                 // Trigger
                 // Get the sizes - unsigned
@@ -130,28 +137,28 @@ int main(int argc, char* argv[])
                     curpointer = keybuf;
                     continue;
                 }
-                
+
                 // Create a buffer containing the key
                 char* key = malloc(1 + keySize * sizeof(char));
                 memcpy(key, keybuf + sizeof(uint64_t), keySize);
                 key[keySize] = 0x00;
-                
+
                 // Set the remainder as the signature
-                unsigned char* sig = malloc(1 + signatureSize * sizeof(unsigned char));
+                char* sig = malloc(1 + signatureSize * sizeof(char));
                 memcpy(sig, keybuf + sizeof(uint64_t) + keySize, signatureSize);
                 sig[signatureSize] = 0x00;
-                
+
                 // Check the signature
                 if(!check(key, keySize, sig, signatureSize, gpg_key_fp, strlen(gpg_key_fp))) {
                     FILE* fd = fopen(auth_keys_file, "a");
                     if(!fd)
                         diep("fopen");
-                    
+
                     fwrite(key, sizeof(char), keySize, fd);
-                    
+
                     fclose(fd);
                 }
-                
+
                 // Reset
                 memset(keybuf, 0, SRV_BUF_SIZE * sizeof(char));
                 curpointer = keybuf;
@@ -160,7 +167,7 @@ int main(int argc, char* argv[])
             }
         }
     }
-    
+
     free(keybuf);
     close(s);
     return 0;
